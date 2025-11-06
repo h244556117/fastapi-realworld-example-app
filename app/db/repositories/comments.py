@@ -5,76 +5,152 @@ from asyncpg import Connection, Record
 from app.db.errors import EntityDoesNotExist
 from app.db.queries.queries import queries
 from app.db.repositories.base import BaseRepository
-from app.db.repositories.profiles import ProfilesRepository
 from app.models.domain.articles import Article
 from app.models.domain.comments import Comment
+from app.models.domain.profiles import Profile
 from app.models.domain.users import User
 
 
 class CommentsRepository(BaseRepository):
     def __init__(self, conn: Connection) -> None:
         super().__init__(conn)
-        self._profiles_repo = ProfilesRepository(conn)
 
     async def get_comment_by_id(
         self,
-        *,
+        *, 
         comment_id: int,
         article: Article,
         user: Optional[User] = None,
     ) -> Comment:
-        comment_row = await queries.get_comment_by_id_and_slug(
-            self.connection,
-            comment_id=comment_id,
-            article_slug=article.slug,
+        # 使用优化查询获取评论及其作者信息
+        comment_row = await self.connection.fetchrow(
+            """
+            SELECT c.id,
+                   c.body,
+                   c.created_at,
+                   c.updated_at,
+                   u.username AS author_username,
+                   u.bio AS author_bio,
+                   u.image AS author_image,
+                   CASE WHEN ftf.follower_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_following
+            FROM commentaries c
+                     JOIN users u ON c.author_id = u.id
+                     JOIN articles a ON c.article_id = a.id AND a.slug = $2
+                     LEFT JOIN followers_to_followings ftf ON u.id = ftf.following_id AND ftf.follower_id = (
+                         SELECT id FROM users WHERE username = $3
+                     )
+            WHERE c.id = $1
+            LIMIT 1;
+            """,
+            comment_id,
+            article.slug,
+            user.username if user else None
         )
-        if comment_row:
-            return await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
-                requested_user=user,
+        
+        if not comment_row:
+            raise EntityDoesNotExist(
+                f"comment with id {comment_id} does not exist",
             )
-
-        raise EntityDoesNotExist(
-            "comment with id {0} does not exist".format(comment_id),
+        
+        # 创建评论作者的profile
+        author_profile = Profile(
+            username=comment_row["author_username"],
+            bio=comment_row["author_bio"],
+            image=comment_row["author_image"],
+            following=comment_row["is_following"] or False
+        )
+        
+        # 创建并返回评论对象
+        return Comment(
+            id_=comment_row["id"],
+            body=comment_row["body"],
+            author=author_profile,
+            created_at=comment_row["created_at"],
+            updated_at=comment_row["updated_at"],
         )
 
     async def get_comments_for_article(
         self,
-        *,
+        *, 
         article: Article,
         user: Optional[User] = None,
     ) -> List[Comment]:
-        comments_rows = await queries.get_comments_for_article_by_slug(
-            self.connection,
-            slug=article.slug,
+        # 使用优化查询一次性获取所有评论及其作者信息
+        comments_rows = await self.connection.fetch(
+            """
+            SELECT c.id,
+                   c.body,
+                   c.created_at,
+                   c.updated_at,
+                   u.username AS author_username,
+                   u.bio AS author_bio,
+                   u.image AS author_image,
+                   CASE WHEN ftf.follower_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_following
+            FROM commentaries c
+                     JOIN users u ON c.author_id = u.id
+                     JOIN articles a ON c.article_id = a.id AND a.slug = $1
+                     LEFT JOIN followers_to_followings ftf ON u.id = ftf.following_id AND ftf.follower_id = (
+                         SELECT id FROM users WHERE username = $2
+                     )
+            ORDER BY c.created_at DESC;
+            """,
+            article.slug,
+            user.username if user else None
         )
-        return [
-            await self._get_comment_from_db_record(
-                comment_row=comment_row,
-                author_username=comment_row["author_username"],
-                requested_user=user,
+        
+        # 将查询结果转换为Comment对象列表
+        comments = []
+        for row in comments_rows:
+            # 创建评论作者的profile
+            author_profile = Profile(
+                username=row["author_username"],
+                bio=row["author_bio"],
+                image=row["author_image"],
+                following=row["is_following"] or False
             )
-            for comment_row in comments_rows
-        ]
+            
+            # 创建评论对象
+            comment = Comment(
+                id_=row["id"],
+                body=row["body"],
+                author=author_profile,
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            comments.append(comment)
+        
+        return comments
 
     async def create_comment_for_article(
         self,
-        *,
+        *, 
         body: str,
         article: Article,
         user: User,
     ) -> Comment:
+        # 创建新评论
         comment_row = await queries.create_new_comment(
             self.connection,
             body=body,
             article_slug=article.slug,
             author_username=user.username,
         )
-        return await self._get_comment_from_db_record(
-            comment_row=comment_row,
-            author_username=comment_row["author_username"],
-            requested_user=user,
+        
+        # 直接构造作者profile，无需额外查询
+        author_profile = Profile(
+            username=user.username,
+            bio=user.bio,
+            image=user.image,
+            following=True  # 当前用户自己的评论，默认关注自己
+        )
+        
+        # 创建并返回评论对象
+        return Comment(
+            id_=comment_row["id"],
+            body=comment_row["body"],
+            author=author_profile,
+            created_at=comment_row["created_at"],
+            updated_at=comment_row["updated_at"],
         )
 
     async def delete_comment(self, *, comment: Comment) -> None:
@@ -82,22 +158,4 @@ class CommentsRepository(BaseRepository):
             self.connection,
             comment_id=comment.id_,
             author_username=comment.author.username,
-        )
-
-    async def _get_comment_from_db_record(
-        self,
-        *,
-        comment_row: Record,
-        author_username: str,
-        requested_user: Optional[User],
-    ) -> Comment:
-        return Comment(
-            id_=comment_row["id"],
-            body=comment_row["body"],
-            author=await self._profiles_repo.get_profile_by_username(
-                username=author_username,
-                requested_user=requested_user,
-            ),
-            created_at=comment_row["created_at"],
-            updated_at=comment_row["updated_at"],
         )

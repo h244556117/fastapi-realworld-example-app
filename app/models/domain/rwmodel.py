@@ -1,10 +1,6 @@
 import datetime
 
-from pydantic import BaseConfig, BaseModel
-
-
-def convert_datetime_to_realworld(dt: datetime.datetime) -> str:
-    return dt.replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 def convert_field_to_camel_case(string: str) -> str:
@@ -15,7 +11,11 @@ def convert_field_to_camel_case(string: str) -> str:
 
 
 class RWModel(BaseModel):
-    class Config(BaseConfig):
-        allow_population_by_field_name = True
-        json_encoders = {datetime.datetime: convert_datetime_to_realworld}
-        alias_generator = convert_field_to_camel_case
+    model_config = ConfigDict(
+        validate_by_name=True,
+        alias_generator=convert_field_to_camel_case
+    )
+
+    @field_serializer("created_at", "updated_at", when_used="json", check_fields=False)
+    def serialize_datetime(self, value: datetime.datetime) -> str:
+        return value.replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00", "Z")

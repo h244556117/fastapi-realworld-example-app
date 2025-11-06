@@ -56,12 +56,8 @@ class ArticlesRepository(BaseRepository):  # noqa: WPS214
                 await self._tags_repo.create_tags_that_dont_exist(tags=tags)
                 await self._link_article_with_tags(slug=slug, tags=tags)
 
-        return await self._get_article_from_db_record(
-            article_row=article_row,
-            slug=slug,
-            author_username=article_row[AUTHOR_USERNAME_ALIAS],
-            requested_user=author,
-        )
+        # Use the optimized get_article_by_slug method to retrieve the complete article with all details
+        return await self.get_article_by_slug(slug=slug, requested_user=author)
 
     async def update_article(  # noqa: WPS211
         self,
