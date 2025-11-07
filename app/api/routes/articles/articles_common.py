@@ -56,17 +56,9 @@ async def mark_article_as_favorite(
 ) -> ArticleInResponse:
     if not article.favorited:
         await articles_repo.add_article_into_favorites(article=article, user=user)
-
-        return ArticleInResponse(
-            article=ArticleForResponse.from_orm(
-                article.copy(
-                    update={
-                        "favorited": True,
-                        "favorites_count": article.favorites_count + 1,
-                    },
-                ),
-            ),
-        )
+        # 从数据库中重新读取完整的文章信息，确保favorites_count和favorited状态是准确的
+        updated_article = await articles_repo.get_article_by_slug(slug=article.slug, requested_user=user)
+        return ArticleInResponse(article=ArticleForResponse.from_orm(updated_article))
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -86,17 +78,9 @@ async def remove_article_from_favorites(
 ) -> ArticleInResponse:
     if article.favorited:
         await articles_repo.remove_article_from_favorites(article=article, user=user)
-
-        return ArticleInResponse(
-            article=ArticleForResponse.from_orm(
-                article.copy(
-                    update={
-                        "favorited": False,
-                        "favorites_count": article.favorites_count - 1,
-                    },
-                ),
-            ),
-        )
+        # 从数据库中重新读取完整的文章信息，确保favorites_count和favorited状态是准确的
+        updated_article = await articles_repo.get_article_by_slug(slug=article.slug, requested_user=user)
+        return ArticleInResponse(article=ArticleForResponse.from_orm(updated_article))
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
