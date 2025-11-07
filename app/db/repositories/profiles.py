@@ -2,6 +2,7 @@ from typing import Optional, Union
 
 from asyncpg import Connection
 
+from app.cache import cache, invalidate_cache, CacheKeys
 from app.db.queries.queries import queries
 from app.db.repositories.base import BaseRepository
 from app.db.repositories.users import UsersRepository
@@ -16,9 +17,14 @@ class ProfilesRepository(BaseRepository):
         super().__init__(conn)
         self._users_repo = UsersRepository(conn)
 
+    @cache(
+        key_pattern=CacheKeys.user_profile("{username}"),
+        ttl=1800,  # 30分钟
+        invalidate_patterns=[f"user:profile:{username}*"]
+    )
     async def get_profile_by_username(
         self,
-        *,
+        *, 
         username: str,
         requested_user: Optional[UserLike],
     ) -> Profile:

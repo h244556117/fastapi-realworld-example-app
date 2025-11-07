@@ -11,6 +11,9 @@ class AppEnvTypes(Enum):
 
 class BaseAppSettings(BaseSettings):
     app_env: AppEnvTypes = AppEnvTypes.prod
+    redis_url: str = "redis://localhost:6379/0"
+    cache_enabled: bool = True
+    cache_default_ttl: int = 300  # 默认5分钟
 
     class Config:
         env_file = ".env"
