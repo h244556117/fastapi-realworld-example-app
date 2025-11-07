@@ -46,6 +46,7 @@ class Articles(TypedTable):
     author_id: int
     created_at: datetime
     updated_at: datetime
+    favorites_count: int
 
 
 class Tags(TypedTable):

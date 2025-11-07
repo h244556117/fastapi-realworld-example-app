@@ -1,15 +1,36 @@
 -- name: add-article-to-favorites!
-INSERT INTO favorites (user_id, article_id)
-VALUES ((SELECT id FROM users WHERE username = :username),
-        (SELECT id FROM articles WHERE slug = :slug))
-ON CONFLICT DO NOTHING;
+WITH article_info AS (
+    SELECT id FROM articles WHERE slug = :slug
+), user_info AS (
+    SELECT id FROM users WHERE username = :username
+), insert_favorite AS (
+    INSERT INTO favorites (user_id, article_id)
+    SELECT user_info.id, article_info.id
+    FROM user_info, article_info
+    ON CONFLICT DO NOTHING
+    RETURNING 1
+)
+UPDATE articles
+SET favorites_count = favorites_count + 1
+FROM insert_favorite
+WHERE articles.id = (SELECT id FROM article_info);
 
 
 -- name: remove-article-from-favorites!
-DELETE
-FROM favorites
-WHERE user_id = (SELECT id FROM users WHERE username = :username)
-  AND article_id = (SELECT id FROM articles WHERE slug = :slug);
+WITH article_info AS (
+    SELECT id FROM articles WHERE slug = :slug
+), user_info AS (
+    SELECT id FROM users WHERE username = :username
+), delete_favorite AS (
+    DELETE FROM favorites
+    WHERE user_id = user_info.id AND article_id = article_info.id
+    FROM user_info, article_info
+    RETURNING 1
+)
+UPDATE articles
+SET favorites_count = favorites_count - 1
+FROM delete_favorite
+WHERE articles.id = (SELECT id FROM article_info);
 
 
 -- name: is-article-in-favorites^
@@ -58,21 +79,16 @@ SELECT a.id,
        u.username AS author_username,
        u.bio AS author_bio,
        u.image AS author_image,
-       COALESCE(f.favorites_count, 0) AS favorites_count,
+       a.favorites_count AS favorites_count,
        CASE WHEN rf.user_id IS NOT NULL THEN TRUE ELSE FALSE END AS favorited,
        ARRAY_AGG(t.tag) FILTER (WHERE t.tag IS NOT NULL) AS tags
 FROM articles a
          JOIN users u ON a.author_id = u.id
-         LEFT JOIN (
-    SELECT article_id, COUNT(*) AS favorites_count
-    FROM favorites
-    GROUP BY article_id
-) f ON a.id = f.article_id
          LEFT JOIN favorites rf ON a.id = rf.article_id AND rf.user_id = (SELECT id FROM users WHERE username = :requested_username)
          LEFT JOIN articles_to_tags att ON a.id = att.article_id
          LEFT JOIN tags t ON att.tag = t.tag
 WHERE a.slug = :slug
-GROUP BY a.id, u.id, f.favorites_count, rf.user_id
+GROUP BY a.id, u.id, rf.user_id
 LIMIT 1;
 
 
