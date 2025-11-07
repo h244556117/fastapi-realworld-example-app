@@ -280,11 +280,6 @@ class ArticlesRepository(BaseRepository):  # noqa: WPS214
         
         return articles_list
 
-    @cache(
-        key_pattern=CacheKeys.article_detail("{slug}", "{requested_user.username}" if requested_user else None),
-        ttl=600,  # 10分钟
-        invalidate_patterns=["article:detail:{slug}:*", "articles:list:*"]
-    )
     async def get_article_by_slug(
         self,
         *, 

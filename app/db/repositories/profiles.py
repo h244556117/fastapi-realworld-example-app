@@ -20,7 +20,7 @@ class ProfilesRepository(BaseRepository):
     @cache(
         key_pattern=CacheKeys.user_profile("{username}"),
         ttl=1800,  # 30分钟
-        invalidate_patterns=[f"user:profile:{username}*"]
+        invalidate_patterns=[CacheKeys.user_profile("*")]
     )
     async def get_profile_by_username(
         self,

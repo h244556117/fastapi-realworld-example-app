@@ -32,6 +32,11 @@ class AppSettings(BaseAppSettings):
 
     logging_level: int = logging.INFO
     loggers: Tuple[str, str] = ("uvicorn.asgi", "uvicorn.access")
+    
+    # Redis配置
+    redis_url: str = "redis://localhost:6379/0"
+    cache_enabled: bool = True
+    cache_default_ttl: int = 3600
 
     class Config:
         validate_assignment = True

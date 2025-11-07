@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
+from app.middleware.rate_limiting import RateLimitMiddleware
 
 from app.api.errors.http_error import http_error_handler
 from app.api.errors.validation_error import http422_error_handler
@@ -24,6 +25,9 @@ def get_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # 添加限流中间件
+    application.add_middleware(RateLimitMiddleware)
 
     application.add_event_handler(
         "startup",

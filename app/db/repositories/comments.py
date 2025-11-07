@@ -65,11 +65,6 @@ class CommentsRepository(BaseRepository):
         # 失效评论列表缓存
         await invalidate_cache([f"comments:article:{article.slug}:*"])
         
-    @cache(
-        key_pattern=CacheKeys.comments_list("{article.slug}"),
-        ttl=300,  # 5分钟
-        invalidate_patterns=[f"comments:article:{article.slug}:*"]
-    )
     async def get_comments_for_article(
         self,
         *, 
